@@ -194,6 +194,10 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                     self.room_id,
                     {"type": "refresh_members"},
                 )
+                await self.channel_layer.group_send(
+                    self.room_id,
+                    {"type": "refresh_message_notifications"},
+                )
             else:
                 await self.channel_layer.send(
                     self.channel_name, {"type": "members", "members": members}
@@ -617,6 +621,10 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
                 await self.channel_layer.group_send(room, {"type": "refresh_members"})
                 await self.channel_layer.group_send(
                     room, {"type": "refresh_join_requests"}
+                )
+                await self.channel_layer.group_send(
+                    room,
+                    {"type": "refresh_message_notifications"},
                 )
             for username in users_to_refresh:
                 await self.channel_layer.group_send(
