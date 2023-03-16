@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import uuid
 from operator import itemgetter
 
 from channels.db import database_sync_to_async
@@ -10,6 +11,10 @@ from blabhear.models import (
     JoinRequest,
     User,
     Notification,
+)
+from blabhear.storage import (
+    generate_upload_signed_url_v4,
+    generate_delete_signed_url_v4,
 )
 
 logger = logging.getLogger(__name__)
@@ -158,6 +163,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             await self.fetch_display_name()
             await self.fetch_privacy()
             await self.fetch_join_requests()
+            await self.fetch_upload_url()
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(str(self.room_id), self.channel_name)
@@ -193,6 +199,23 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 asyncio.create_task(self.fetch_display_name())
             if content.get("command") == "read_room_notification":
                 asyncio.create_task(self.read_room_notification())
+            if content.get("command") == "fetch_upload_url":
+                asyncio.create_task(self.fetch_upload_url())
+
+    async def fetch_upload_url(self):
+        filename = str(uuid.uuid4())
+        url = generate_upload_signed_url_v4(filename)
+        delete_upload_url = generate_delete_signed_url_v4(filename)
+        await self.channel_layer.send(
+            self.channel_name,
+            {
+                "type": "upload_url",
+                "upload_url": url,
+                "delete_upload_url": delete_upload_url,
+                "filename": filename,
+                "refresh_upload_destination_in": 604790000,
+            },
+        )
 
     async def read_room_notification(self):
         await database_sync_to_async(self.read_unread_room_notification)()
@@ -407,6 +430,10 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         await self.send_json(event)
 
     async def display_name(self, event):
+        # Send message to WebSocket
+        await self.send_json(event)
+
+    async def upload_url(self, event):
         # Send message to WebSocket
         await self.send_json(event)
 
