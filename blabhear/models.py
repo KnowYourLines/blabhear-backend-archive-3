@@ -79,3 +79,24 @@ class UserNotification(models.Model):
                 _("User notification must be unique per user in room.")
             )
         super(UserNotification, self).save(*args, **kwargs)
+
+
+class MessageNotification(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    receiver = models.ForeignKey(User, on_delete=models.CASCADE)
+    room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    timestamp = models.DateTimeField(auto_now=True)
+    read = models.BooleanField(default=False)
+    message = models.ForeignKey(Message, on_delete=models.CASCADE)
+
+    def save(self, *args, **kwargs):
+        other_notifications = MessageNotification.objects.filter(
+            receiver=self.receiver, room=self.room, message=self.message
+        ).exclude(id=self.id)
+        if other_notifications.exists():
+            raise ValidationError(
+                _(
+                    "Message notification must be unique per receiver and per message in room."
+                )
+            )
+        super(MessageNotification, self).save(*args, **kwargs)

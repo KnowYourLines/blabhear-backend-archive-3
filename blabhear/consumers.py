@@ -11,6 +11,7 @@ from blabhear.models import (
     User,
     UserNotification,
     Message,
+    MessageNotification,
 )
 from blabhear.storage import (
     generate_upload_signed_url_v4,
@@ -130,6 +131,38 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             notification.read = user == self.user
             notification.save()
 
+    def create_message_notifications_for_new_message(self):
+        room = self.get_room(self.room_id)
+        for user in room.members.all():
+            message = Message.objects.get(room=room, creator=self.user)
+            notification, created = MessageNotification.objects.get_or_create(
+                receiver=user, room=room, message=message
+            )
+            notification.read = user == self.user
+            notification.save()
+
+    def get_message_notifications(self):
+        room = self.get_room(self.room_id)
+        room_member_pks = room.members.all().values_list("pk", flat=True)
+        notifications = list(
+            self.user.messagenotification_set.filter(
+                room__id=self.room_id, message__creator__id__in=room_member_pks
+            )
+            .values(
+                "read",
+                "timestamp",
+                "message__creator__display_name",
+            )
+            .order_by("-timestamp")
+        )
+        notifications.sort(key=itemgetter("timestamp"), reverse=True)
+        notifications.sort(key=itemgetter("read"))
+        for notification in notifications:
+            notification["timestamp"] = notification["timestamp"].strftime(
+                "%d-%m-%Y %H:%M"
+            )
+        return notifications
+
     async def connect(self):
         await self.accept()
         self.user = self.scope["user"]
@@ -176,6 +209,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             await self.fetch_privacy()
             await self.fetch_join_requests()
             await self.fetch_upload_url()
+            await self.fetch_message_notifications()
 
     async def disconnect(self, close_code):
         await self.channel_layer.group_discard(str(self.room_id), self.channel_name)
@@ -215,9 +249,30 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 asyncio.create_task(self.fetch_upload_url())
             if content.get("command") == "send_message":
                 asyncio.create_task(self.send_message())
+            if content.get("command") == "fetch_message_notifications":
+                asyncio.create_task(self.fetch_message_notifications())
+
+    async def fetch_message_notifications(self):
+        message_notifications = await database_sync_to_async(
+            self.get_message_notifications
+        )()
+        await self.channel_layer.send(
+            self.channel_name,
+            {
+                "type": "message_notifications",
+                "message_notifications": message_notifications,
+            },
+        )
 
     async def send_message(self):
         await database_sync_to_async(self.create_user_notifications_for_new_message)()
+        await database_sync_to_async(
+            self.create_message_notifications_for_new_message
+        )()
+        await self.channel_layer.group_send(
+            self.room_id,
+            {"type": "refresh_message_notifications"},
+        )
         (
             room_member_display_names,
             room_member_usernames,
@@ -415,6 +470,14 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         else:
             await self.send_json(event)
 
+    async def refresh_message_notifications(self, event):
+        # Send message to WebSocket
+        await self.send_json(event)
+
+    async def message_notifications(self, event):
+        # Send message to WebSocket
+        await self.send_json(event)
+
     async def refresh_join_requests(self, event):
         # Send message to WebSocket
         await self.send_json(event)
@@ -598,6 +661,10 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             input_payload["room_id"],
             {"type": "refresh_allowed_status"},
+        )
+        await self.channel_layer.group_send(
+            input_payload["room_id"],
+            {"type": "refresh_message_notifications"},
         )
         notifications = await database_sync_to_async(self.get_user_notifications)()
         await self.channel_layer.group_send(
