@@ -14,7 +14,6 @@ from blabhear.models import (
 )
 from blabhear.storage import (
     generate_upload_signed_url_v4,
-    generate_delete_signed_url_v4,
 )
 
 logger = logging.getLogger(__name__)
@@ -235,13 +234,11 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         message = await database_sync_to_async(self.get_message)()
         filename = str(message.id)
         url = generate_upload_signed_url_v4(filename)
-        delete_upload_url = generate_delete_signed_url_v4(filename)
         await self.channel_layer.send(
             self.channel_name,
             {
                 "type": "upload_url",
                 "upload_url": url,
-                "delete_upload_url": delete_upload_url,
                 "refresh_upload_destination_in": 604790000,
             },
         )

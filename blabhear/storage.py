@@ -38,19 +38,6 @@ def generate_upload_signed_url_v4(blob_name):
     return url
 
 
-def generate_delete_signed_url_v4(blob_name):
-    bucket = storage_client.bucket(os.environ.get("GCP_UPLOAD_BUCKET"))
-    blob = bucket.blob(blob_name)
-
-    url = blob.generate_signed_url(
-        version="v4",
-        expiration=datetime.timedelta(days=7),
-        method="DELETE",
-        content_type="audio/ogg",
-    )
-    return url
-
-
 def generate_download_signed_url_v4(blob_name):
     bucket = storage_client.bucket(os.environ.get("GCP_UPLOAD_BUCKET"))
     blob = bucket.blob(blob_name)
