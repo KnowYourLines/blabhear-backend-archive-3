@@ -1,6 +1,5 @@
 import asyncio
 import logging
-import uuid
 from operator import itemgetter
 
 from channels.db import database_sync_to_async
@@ -11,6 +10,7 @@ from blabhear.models import (
     JoinRequest,
     User,
     Notification,
+    Message,
 )
 from blabhear.storage import (
     generate_upload_signed_url_v4,
@@ -69,6 +69,11 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             )
         )
         return all_join_requests
+
+    def get_message(self):
+        room = self.get_room(self.room_id)
+        message, created = Message.objects.get_or_create(room=room, creator=self.user)
+        return message
 
     def get_or_create_new_join_request(self):
         room = self.get_room(self.room_id)
@@ -203,7 +208,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 asyncio.create_task(self.fetch_upload_url())
 
     async def fetch_upload_url(self):
-        filename = str(uuid.uuid4())
+        message = await database_sync_to_async(self.get_message)()
+        filename = str(message.id)
         url = generate_upload_signed_url_v4(filename)
         delete_upload_url = generate_delete_signed_url_v4(filename)
         await self.channel_layer.send(

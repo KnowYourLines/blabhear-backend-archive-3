@@ -29,6 +29,22 @@ class Room(models.Model):
         super(Room, self).save(*args, **kwargs)
 
 
+class Message(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    creator = models.ForeignKey(User, on_delete=models.CASCADE)
+    room = models.ForeignKey(Room, on_delete=models.CASCADE)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def save(self, *args, **kwargs):
+        other_messages = Message.objects.filter(
+            room=self.room, creator=self.creator
+        ).exclude(id=self.id)
+        if other_messages.exists():
+            raise ValidationError(_("Message must be unique per creator in room."))
+        super(Message, self).save(*args, **kwargs)
+
+
 class JoinRequest(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
