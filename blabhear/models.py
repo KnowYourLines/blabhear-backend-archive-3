@@ -60,17 +60,22 @@ class JoinRequest(models.Model):
         super(JoinRequest, self).save(*args, **kwargs)
 
 
-class Notification(models.Model):
+class UserNotification(models.Model):
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     user = models.ForeignKey(User, on_delete=models.CASCADE)
     room = models.ForeignKey(Room, on_delete=models.CASCADE)
     timestamp = models.DateTimeField(auto_now=True)
     read = models.BooleanField(default=False)
+    message = models.ForeignKey(
+        Message, blank=True, null=True, on_delete=models.SET_NULL
+    )
 
     def save(self, *args, **kwargs):
-        other_notifications = Notification.objects.filter(
+        other_notifications = UserNotification.objects.filter(
             user=self.user, room=self.room
         ).exclude(id=self.id)
         if other_notifications.exists():
-            raise ValidationError(_("Notification must be unique per user in room."))
-        super(Notification, self).save(*args, **kwargs)
+            raise ValidationError(
+                _("User notification must be unique per user in room.")
+            )
+        super(UserNotification, self).save(*args, **kwargs)

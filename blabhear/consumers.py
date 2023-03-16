@@ -9,7 +9,7 @@ from blabhear.models import (
     Room,
     JoinRequest,
     User,
-    Notification,
+    UserNotification,
     Message,
 )
 from blabhear.storage import (
@@ -40,7 +40,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         was_added = False
         if user not in room.members.all():
             room.members.add(user)
-            Notification.objects.get_or_create(
+            UserNotification.objects.get_or_create(
                 user=user,
                 room=room,
             )
@@ -88,7 +88,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         user = User.objects.get(username=username)
         room = self.get_room(self.room_id)
         room.members.add(user)
-        Notification.objects.get_or_create(
+        UserNotification.objects.get_or_create(
             user=user,
             room=room,
         )
@@ -99,7 +99,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         room = self.get_room(self.room_id)
         for request in room.joinrequest_set.all():
             room.members.add(request.user)
-            Notification.objects.get_or_create(
+            UserNotification.objects.get_or_create(
                 user=request.user,
                 room=room,
             )
@@ -118,10 +118,18 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 
     def read_unread_room_notification(self):
         room = self.get_room(self.room_id)
-        room_notification = Notification.objects.get(user=self.user, room=room)
+        room_notification = UserNotification.objects.get(user=self.user, room=room)
         if not room_notification.read:
             room_notification.read = True
             room_notification.save()
+
+    def create_user_notifications_for_new_message(self):
+        room = self.get_room(self.room_id)
+        for user in room.members.all():
+            notification = UserNotification.objects.get(user=user, room=room)
+            notification.message = Message.objects.get(room=room, creator=self.user)
+            notification.read = user == self.user
+            notification.save()
 
     async def connect(self):
         await self.accept()
@@ -206,6 +214,22 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 asyncio.create_task(self.read_room_notification())
             if content.get("command") == "fetch_upload_url":
                 asyncio.create_task(self.fetch_upload_url())
+            if content.get("command") == "send_message":
+                asyncio.create_task(self.send_message())
+
+    async def send_message(self):
+        await database_sync_to_async(self.create_user_notifications_for_new_message)()
+        (
+            room_member_display_names,
+            room_member_usernames,
+        ) = await database_sync_to_async(self.get_all_room_members)()
+        for username in room_member_usernames:
+            await self.channel_layer.group_send(
+                username,
+                {
+                    "type": "refresh_notifications",
+                },
+            )
 
     async def fetch_upload_url(self):
         message = await database_sync_to_async(self.get_message)()
@@ -218,7 +242,6 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 "type": "upload_url",
                 "upload_url": url,
                 "delete_upload_url": delete_upload_url,
-                "filename": filename,
                 "refresh_upload_destination_in": 604790000,
             },
         )
@@ -447,11 +470,12 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
 class UserConsumer(AsyncJsonWebsocketConsumer):
     def get_user_notifications(self):
         notifications = list(
-            self.user.notification_set.values(
+            self.user.usernotification_set.values(
                 "room",
                 "room__display_name",
                 "read",
                 "timestamp",
+                "message__creator__display_name",
             )
             .order_by("room", "-timestamp")
             .distinct("room")
@@ -469,7 +493,7 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
         room_to_leave = Room.objects.get(id=room_id)
         room_to_leave.members.remove(self.user)
         self.user.room_set.remove(room_to_leave)
-        self.user.notification_set.filter(room=room_to_leave).delete()
+        self.user.usernotification_set.filter(room=room_to_leave).delete()
         if not room_to_leave.members.all() and not room_to_leave.joinrequest_set.all():
             room_to_leave.delete()
 
@@ -485,7 +509,7 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
         rooms_to_refresh = set(rooms_to_refresh)
         users_to_refresh = [
             str(notification["user__username"])
-            for notification in Notification.objects.all().values("user__username")
+            for notification in UserNotification.objects.all().values("user__username")
         ]
         return new_name, rooms_to_refresh, users_to_refresh
 
