@@ -15,6 +15,7 @@ from blabhear.models import (
 )
 from blabhear.storage import (
     generate_upload_signed_url_v4,
+    generate_download_signed_url_v4,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,8 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                 room__id=self.room_id, message__creator__id__in=room_member_pks
             )
             .values(
+                "id",
+                "message__id",
                 "read",
                 "timestamp",
                 "message__creator__display_name",
@@ -158,8 +161,14 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         notifications.sort(key=itemgetter("timestamp"), reverse=True)
         notifications.sort(key=itemgetter("read"))
         for notification in notifications:
-            notification["timestamp"] = notification["timestamp"].strftime(
+            notification["id"] = str(notification["id"])
+            notification["message__id"] = str(notification["message__id"])
+            notification["readable_timestamp"] = notification["timestamp"].strftime(
                 "%d-%m-%Y %H:%M"
+            )
+            notification["timestamp"] = str(notification["timestamp"])
+            notification["url"] = generate_download_signed_url_v4(
+                notification["message__id"]
             )
         return notifications
 
@@ -265,6 +274,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             {
                 "type": "message_notifications",
                 "message_notifications": message_notifications,
+                "refresh_message_notifications_in": 604790000,
             },
         )
 
