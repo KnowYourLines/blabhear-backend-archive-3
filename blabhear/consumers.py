@@ -164,7 +164,7 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             notification["id"] = str(notification["id"])
             notification["message__id"] = str(notification["message__id"])
             notification["readable_timestamp"] = notification["timestamp"].strftime(
-                "%d-%m-%Y %H:%M"
+                "%d-%m-%Y %H:%M:%S"
             )
             notification["timestamp"] = str(notification["timestamp"])
             notification["url"] = generate_download_signed_url_v4(
@@ -298,6 +298,10 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
                     "type": "refresh_notifications",
                 },
             )
+        await self.channel_layer.group_send(
+            self.room_id,
+            {"type": "room_notified"},
+        )
 
     async def fetch_upload_url(self):
         message = await database_sync_to_async(self.get_message)()
@@ -559,7 +563,7 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
         for notification in notifications:
             notification["room"] = str(notification["room"])
             notification["timestamp"] = notification["timestamp"].strftime(
-                "%d-%m-%Y %H:%M"
+                "%d-%m-%Y %H:%M:%S"
             )
         return notifications
 
