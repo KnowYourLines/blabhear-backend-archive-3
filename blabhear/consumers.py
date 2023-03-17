@@ -133,14 +133,16 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         room = self.get_room(self.room_id)
         for user in room.members.all():
             notification = UserNotification.objects.get(user=user, room=room)
-            notification.message = Message.objects.get(room=room, creator=self.user)
+            notification.message = Message.objects.get_or_create(
+                room=room, creator=self.user
+            )
             notification.read = user == self.user
             notification.save()
 
     def create_message_notifications_for_new_message(self):
         room = self.get_room(self.room_id)
         for user in room.members.all():
-            message = Message.objects.get(room=room, creator=self.user)
+            message = Message.objects.get_or_create(room=room, creator=self.user)
             notification, created = MessageNotification.objects.get_or_create(
                 receiver=user, room=room, message=message
             )
