@@ -401,10 +401,6 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         )
         await self.channel_layer.group_send(
             self.room_id,
-            {"type": "refresh_message_notifications"},
-        )
-        await self.channel_layer.group_send(
-            self.room_id,
             {"type": "refresh_upload_url"},
         )
         await self.channel_layer.group_send(
@@ -454,10 +450,6 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
         await self.channel_layer.group_send(
             self.room_id,
             {"type": "refresh_privacy"},
-        )
-        await self.channel_layer.group_send(
-            self.room_id,
-            {"type": "refresh_message_notifications"},
         )
         await self.channel_layer.group_send(
             self.room_id,
@@ -523,6 +515,10 @@ class RoomConsumer(AsyncJsonWebsocketConsumer):
             await self.send_json(event)
 
     async def refresh_message_notifications(self, event):
+        # Send message to WebSocket
+        await self.send_json(event)
+
+    async def refresh_upload_url(self, event):
         # Send message to WebSocket
         await self.send_json(event)
 
@@ -606,6 +602,7 @@ class UserConsumer(AsyncJsonWebsocketConsumer):
         room_to_leave.members.remove(self.user)
         self.user.room_set.remove(room_to_leave)
         self.user.usernotification_set.filter(room=room_to_leave).delete()
+        self.user.messagenotification_set.filter(room=room_to_leave).delete()
         if not room_to_leave.members.all() and not room_to_leave.joinrequest_set.all():
             room_to_leave.delete()
 
